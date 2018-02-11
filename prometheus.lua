@@ -170,7 +170,7 @@ core.register_service("prometheus", "http", function(applet)
   local query  = applet.qs
 
   if path == '/metrics' then
-    local buffer = ''
+    local buffer = core.concat()
  
     -- clean up old values first
     for name, metric in pairs(metrics)
@@ -263,34 +263,52 @@ core.register_service("prometheus", "http", function(applet)
     -- prepare the body of the response
     for metricName, metric in pairs(metrics)
     do
-      buffer = buffer .. metric['help'] .. '\n'
-      buffer = buffer .. metric['type'] .. '\n'
+      buffer:add(metric['help'])
+      buffer:add('\n')
+      buffer:add(metric['type'])
+      buffer:add('\n')
       for id, line in pairs(metric['values'])
       do
-        buffer = buffer .. metricName 
+        buffer:add(metricName)
         if metric['objectType'] == 'server' then
-          buffer = buffer .. '{backend="' .. line['backend'] .. '",' .. metric['objectType'] .. '="' .. line['name'] .. '"' 
+          buffer:add('{backend="')
+	  buffer:add(line['backend'])
+	  buffer:add('",')
+	  buffer:add(metric['objectType'])
+	  buffer:add('="')
+	  buffer:add(line['name'])
+	  buffer:add('"')
         else
-          buffer = buffer .. '{' .. metric['objectType'] .. '="' .. line['name'] .. '"'
+          buffer:add('{')
+	  buffer:add(metric['objectType'])
+	  buffer:add('="')
+	  buffer:add(line['name'])
+	  buffer:add('"')
 	end
 	if line['labels'] then
           for labelName, labelValue in pairs(line['labels'])
           do
-            buffer = buffer .. ',' .. labelName .. '="' .. labelValue .. '"'
+            buffer:add(',')
+	    buffer:add(labelName)
+	    buffer:add('="')
+	    buffer:add(labelValue)
+	    buffer:add('"')
           end
         end
-	buffer = buffer .. '} ' .. line['value'] .. '\n'
+	buffer:add('} ')
+	buffer:add(line['value'])
+	buffer:add('\n')
       end
     end
 
     -- send the response with the metrics
     applet:set_status(200)
-    len = string.len(buffer)
+    len = string.len(buffer:dump())
     applet:add_header("Content-Length", len)
     applet:add_header("Content-Type", "text/plain; version=0.0.4")
     --- TODO: Add date header
     applet:start_response()
-    applet:send(buffer)
+    applet:send(buffer:dump())
   else
     applet:set_status(200)
     len = string.len(default_page)
