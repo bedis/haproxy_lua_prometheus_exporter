@@ -171,13 +171,13 @@ core.register_service("prometheus", "http", function(applet)
 
   if path == '/metrics' then
     local buffer = core.concat()
- 
+
     -- clean up old values first
     for name, metric in pairs(metrics)
     do
       metric['values'] = {}
     end
- 
+
 
     -- filling up the global table with the frontend metrics
     -- First parses HAProxy's internal structure
