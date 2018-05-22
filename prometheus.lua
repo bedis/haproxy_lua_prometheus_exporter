@@ -169,147 +169,7 @@ core.register_service("prometheus", "http", function(applet)
   local path   = applet.path
   local query  = applet.qs
 
-  if path == '/metrics' then
-    local buffer = core.concat()
-
-    -- clean up old values first
-    for name, metric in pairs(metrics)
-    do
-      metric['values'] = {}
-    end
-
-
-    -- filling up the global table with the frontend metrics
-    -- First parses HAProxy's internal structure
-    for j,f in pairs(core.frontends)
-    do
-      myStats = f.get_stats(f)
-      for haproxyMetricName, value in pairs(myStats)
-      do
-        local metricName = ''
-        if frontendMetrics[haproxyMetricName] then
-          metricName = frontendMetrics[haproxyMetricName]['metricName']
-        end
-	-- Store the metrics in the global table
-        if metrics[metricName] then
-          local myValue = { name=f.name, value=value }
-          if frontendMetrics[haproxyMetricName]['labels'] then
-            myValue['labels'] = frontendMetrics[haproxyMetricName]['labels']
-          end
-          table.insert(metrics[metricName]['values'], myValue)
-        end
-      end
-    end
-
-
-    -- filling up the global table with the backend and server metrics
-    -- First parses HAProxy's internal structure
-    for j,b in pairs(core.backends)
-    do
-      myStats = b.get_stats(b)
-      for haproxyMetricName, value in pairs(myStats)
-      do
-        local metricName = ''
-        if backendMetrics[haproxyMetricName] then
-          metricName = backendMetrics[haproxyMetricName]['metricName']
-        end
-	-- Store the backend metrics in the global table
-        if metrics[metricName] then
-          if haproxyMetricName == 'status' then
-            value = parseStatusField(value)
-          end
-          -- those metrics are expressed in miliseconds while prometheus expects seconds
-          if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
-            value = value / 1000
-          end
-          local myValue = { name=b.name, value=value }
-          if backendMetrics[haproxyMetricName]['labels'] then
-            myValue['labels'] = backendMetrics[haproxyMetricName]['labels']
-          end
-          table.insert(metrics[metricName]['values'], myValue)
-        end
-      end
-      -- server metrics
-      -- haproxy_server_bytes_in_total{backend="be",server="node_exporter"} 0
-      for k,s in pairs(b.servers)
-      do
-        local serverName = k
-        myStats = s.get_stats(s)
-        for haproxyMetricName, value in pairs(myStats)
-        do
-          local metricName = ''
-          if serverMetrics[haproxyMetricName] then
-            metricName = serverMetrics[haproxyMetricName]['metricName']
-          end
-	  -- Store the server metrics in the global table
-          if metrics[metricName] then
-            if haproxyMetricName == 'status' then
-              value = parseStatusField(value)
-            end
-            -- those metrics are expressed in miliseconds while prometheus expects seconds
-            if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
-              value = value / 1000
-            end
-            local myValue = { backend=b.name, name=serverName, value=value }
-            if serverMetrics[haproxyMetricName]['labels'] then
-              myValue['labels'] = serverMetrics[haproxyMetricName]['labels']
-            end
-            table.insert(metrics[metricName]['values'], myValue)
-          end
-        end
-      end
-    end
-
-    -- prepare the body of the response
-    for metricName, metric in pairs(metrics)
-    do
-      buffer:add(metric['help'])
-      buffer:add('\n')
-      buffer:add(metric['type'])
-      buffer:add('\n')
-      for id, line in pairs(metric['values'])
-      do
-        buffer:add(metricName)
-        if metric['objectType'] == 'server' then
-          buffer:add('{backend="')
-	  buffer:add(line['backend'])
-	  buffer:add('",')
-	  buffer:add(metric['objectType'])
-	  buffer:add('="')
-	  buffer:add(line['name'])
-	  buffer:add('"')
-        else
-          buffer:add('{')
-	  buffer:add(metric['objectType'])
-	  buffer:add('="')
-	  buffer:add(line['name'])
-	  buffer:add('"')
-	end
-	if line['labels'] then
-          for labelName, labelValue in pairs(line['labels'])
-          do
-            buffer:add(',')
-	    buffer:add(labelName)
-	    buffer:add('="')
-	    buffer:add(labelValue)
-	    buffer:add('"')
-          end
-        end
-	buffer:add('} ')
-	buffer:add(line['value'])
-	buffer:add('\n')
-      end
-    end
-
-    -- send the response with the metrics
-    applet:set_status(200)
-    len = string.len(buffer:dump())
-    applet:add_header("Content-Length", len)
-    applet:add_header("Content-Type", "text/plain; version=0.0.4")
-    --- TODO: Add date header
-    applet:start_response()
-    applet:send(buffer:dump())
-  else
+  if path ~= '/metrics' then
     applet:set_status(200)
     len = string.len(default_page)
     applet:add_header("Content-Length", len)
@@ -318,6 +178,146 @@ core.register_service("prometheus", "http", function(applet)
     applet:start_response()
     applet:send(default_page)
   end
+
+  local buffer = core.concat()
+
+  -- clean up old values first
+  for name, metric in pairs(metrics)
+  do
+    metric['values'] = {}
+  end
+
+
+  -- filling up the global table with the frontend metrics
+  -- First parses HAProxy's internal structure
+  for j,f in pairs(core.frontends)
+  do
+    myStats = f.get_stats(f)
+    for haproxyMetricName, value in pairs(myStats)
+    do
+      local metricName = ''
+      if frontendMetrics[haproxyMetricName] then
+        metricName = frontendMetrics[haproxyMetricName]['metricName']
+      end
+      -- Store the metrics in the global table
+      if metrics[metricName] then
+        local myValue = { name=f.name, value=value }
+        if frontendMetrics[haproxyMetricName]['labels'] then
+          myValue['labels'] = frontendMetrics[haproxyMetricName]['labels']
+        end
+        table.insert(metrics[metricName]['values'], myValue)
+      end
+    end
+  end
+
+
+  -- filling up the global table with the backend and server metrics
+  -- First parses HAProxy's internal structure
+  for j,b in pairs(core.backends)
+  do
+    myStats = b.get_stats(b)
+    for haproxyMetricName, value in pairs(myStats)
+    do
+      local metricName = ''
+      if backendMetrics[haproxyMetricName] then
+        metricName = backendMetrics[haproxyMetricName]['metricName']
+      end
+      -- Store the backend metrics in the global table
+      if metrics[metricName] then
+        if haproxyMetricName == 'status' then
+          value = parseStatusField(value)
+        end
+        -- those metrics are expressed in miliseconds while prometheus expects seconds
+        if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
+          value = value / 1000
+        end
+        local myValue = { name=b.name, value=value }
+        if backendMetrics[haproxyMetricName]['labels'] then
+          myValue['labels'] = backendMetrics[haproxyMetricName]['labels']
+        end
+        table.insert(metrics[metricName]['values'], myValue)
+      end
+    end
+    -- server metrics
+    -- haproxy_server_bytes_in_total{backend="be",server="node_exporter"} 0
+    for k,s in pairs(b.servers)
+    do
+      local serverName = k
+      myStats = s.get_stats(s)
+      for haproxyMetricName, value in pairs(myStats)
+      do
+        local metricName = ''
+        if serverMetrics[haproxyMetricName] then
+          metricName = serverMetrics[haproxyMetricName]['metricName']
+        end
+        -- Store the server metrics in the global table
+        if metrics[metricName] then
+          if haproxyMetricName == 'status' then
+            value = parseStatusField(value)
+          end
+          -- those metrics are expressed in miliseconds while prometheus expects seconds
+          if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
+            value = value / 1000
+          end
+          local myValue = { backend=b.name, name=serverName, value=value }
+          if serverMetrics[haproxyMetricName]['labels'] then
+            myValue['labels'] = serverMetrics[haproxyMetricName]['labels']
+          end
+          table.insert(metrics[metricName]['values'], myValue)
+        end
+      end
+    end
+  end
+
+  -- prepare the body of the response
+  for metricName, metric in pairs(metrics)
+  do
+    buffer:add(metric['help'])
+    buffer:add('\n')
+    buffer:add(metric['type'])
+    buffer:add('\n')
+    for id, line in pairs(metric['values'])
+    do
+      buffer:add(metricName)
+      if metric['objectType'] == 'server' then
+        buffer:add('{backend="')
+        buffer:add(line['backend'])
+        buffer:add('",')
+        buffer:add(metric['objectType'])
+        buffer:add('="')
+        buffer:add(line['name'])
+        buffer:add('"')
+      else
+        buffer:add('{')
+        buffer:add(metric['objectType'])
+        buffer:add('="')
+        buffer:add(line['name'])
+        buffer:add('"')
+      end
+      if line['labels'] then
+        for labelName, labelValue in pairs(line['labels'])
+        do
+          buffer:add(',')
+          buffer:add(labelName)
+          buffer:add('="')
+          buffer:add(labelValue)
+          buffer:add('"')
+        end
+      end
+      buffer:add('} ')
+      buffer:add(line['value'])
+      buffer:add('\n')
+    end
+  end
+
+  -- send the response with the metrics
+  applet:set_status(200)
+  len = string.len(buffer:dump())
+  applet:add_header("Content-Length", len)
+  applet:add_header("Content-Type", "text/plain; version=0.0.4")
+  --- TODO: Add date header
+  applet:start_response()
+  applet:send(buffer:dump())
 
 end)
 
