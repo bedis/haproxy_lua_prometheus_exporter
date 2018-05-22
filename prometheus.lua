@@ -12,7 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 -- default page served when the request arrive in the Lua exporter
 -- for any URL but /metrics
-local default_page = [[
+default_page = [[
 <html>
 <head><title>Haproxy Exporter in Lua</title></head>
 <body>
@@ -23,7 +23,7 @@ local default_page = [[
 ]]
 
 -- table to link HAProxy's frontend statistics counter to its prometheus equivalent
-local frontendMetrics = {
+frontendMetrics = {
 	scur = { type="gauge", metricName="haproxy_frontend_current_sessions", help="Current number of active sessions." };
 	smax = { type="gauge", metricName="haproxy_frontend_max_sessions", help="Maximum observed number of active sessions." };
 	slim = { type="gauge", metricName="haproxy_frontend_limit_sessions", help="Configured session limit." };
@@ -46,7 +46,7 @@ local frontendMetrics = {
 }
 
 -- table to link HAProxy's backend statistics counter to its prometheus equivalent
-local backendMetrics = {
+backendMetrics = {
 	qcur = { type="gauge", metricName="haproxy_backend_current_queue", help="Current number of queued requests not assigned to any server." };
 	qmax = { type="gauge", metricName="haproxy_backend_max_queue", help="Maximum observed number of queued requests not assigned to any server." };
 	scur = { type="gauge", metricName="haproxy_backend_current_sessions", help="Current number of active sessions." };
@@ -77,7 +77,7 @@ local backendMetrics = {
 }
 
 -- table to link HAProxy's server statistics counter to its prometheus equivalent
-local serverMetrics = {
+serverMetrics = {
 	qcur = { type="gauge", metricName="haproxy_server_current_queue", help="Current number of queued requests assigned to this server." };
 	qmax = { type="gauge", metricName="haproxy_server_max_queue", help="Maximum observed number of queued requests assigned to this server.", };
 	scur = { type="gauge", metricName="haproxy_server_current_sessions", help="Current number of active sessions." };
