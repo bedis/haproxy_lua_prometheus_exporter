@@ -111,35 +111,40 @@ serverMetrics = {
 
 
 -- prepare the global table which will hosts the metrics later
+-- this function will be executed by HAProxy right after the full configuration parsing
+-- and before runtime
 metrics = {}
-for haproxyMetricName, metric in pairs(frontendMetrics)
-do
-  local metricName = metric['metricName']
-  local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
-  local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
-  if not metrics[metricName] then
-    metrics[metricName] = { help=metricHelp, type=metricType, objectType='frontend', values={} }
+function load_metrics()
+  for haproxyMetricName, metric in pairs(frontendMetrics)
+  do
+    local metricName = metric['metricName']
+    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
+    local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
+    if not metrics[metricName] then
+      metrics[metricName] = { help=metricHelp, type=metricType, objectType='frontend', values={} }
+    end
   end
-end
 
-for haproxyMetricName, metric in pairs(backendMetrics)
-do
-  local metricName = metric['metricName']
-  local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
-  local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
-  if not metrics[metricName] then
-    metrics[metricName] = { help=metricHelp, type=metricType, objectType='backend', values={} }
+  for haproxyMetricName, metric in pairs(backendMetrics)
+  do
+    local metricName = metric['metricName']
+    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
+    local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
+    if not metrics[metricName] then
+      metrics[metricName] = { help=metricHelp, type=metricType, objectType='backend', values={} }
+    end
+  end
+  for haproxyMetricName, metric in pairs(serverMetrics)
+  do
+    local metricName = metric['metricName']
+    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
+    local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
+    if not metrics[metricName] then
+      metrics[metricName] = { help=metricHelp, type=metricType, objectType='server', values={} }
+    end
   end
 end
-for haproxyMetricName, metric in pairs(serverMetrics)
-do
-  local metricName = metric['metricName']
-  local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
-  local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
-  if not metrics[metricName] then
-    metrics[metricName] = { help=metricHelp, type=metricType, objectType='server', values={} }
-  end
-end
+core.register_init(load_metrics)
 
 -- function which returns an integer related to the string which describes
 -- a frontend or backend or server status
