@@ -118,7 +118,7 @@ function load_metrics()
   for haproxyMetricName, metric in pairs(frontendMetrics)
   do
     local metricName = metric['metricName']
-    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
+    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help'] .. ' (' .. haproxyMetricName .. ')'
     local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
     if not metrics[metricName] then
       metrics[metricName] = { help=metricHelp, type=metricType, objectType='frontend', values={} }
@@ -128,7 +128,7 @@ function load_metrics()
   for haproxyMetricName, metric in pairs(backendMetrics)
   do
     local metricName = metric['metricName']
-    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
+    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help'] .. ' (' .. haproxyMetricName .. ')'
     local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
     if not metrics[metricName] then
       metrics[metricName] = { help=metricHelp, type=metricType, objectType='backend', values={} }
@@ -137,7 +137,7 @@ function load_metrics()
   for haproxyMetricName, metric in pairs(serverMetrics)
   do
     local metricName = metric['metricName']
-    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help']
+    local metricHelp = '# HELP ' .. metricName .. ' ' .. metric['help'] .. ' (' .. haproxyMetricName .. ')'
     local metricType = '# TYPE ' .. metricName .. ' ' .. metric['type']
     if not metrics[metricName] then
       metrics[metricName] = { help=metricHelp, type=metricType, objectType='server', values={} }
@@ -156,6 +156,116 @@ function parseStatusField(status)
 end
 
 
+-- TODO comment
+function load_frontend(myMetrics, feName, myStats, statsFilter)
+  local myMetricsTable
+  if statsFilter ~= nil then
+    myMetricsTable = statsFilter
+  else
+    myMetricsTable = myStats
+  end
+
+  for haproxyMetricName,_ in pairs(myMetricsTable) do
+    local metricName = ''
+    if frontendMetrics[haproxyMetricName] then
+      metricName = frontendMetrics[haproxyMetricName]['metricName']
+    end
+    -- Store the metrics in the global table
+    if myMetrics[metricName] then
+      local value = myStats[haproxyMetricName]
+      local myValue = { name=feName, value=value }
+      if frontendMetrics[haproxyMetricName]['labels'] then
+        myValue['labels'] = frontendMetrics[haproxyMetricName]['labels']
+      end
+      table.insert(myMetrics[metricName]['values'], myValue)
+    end
+  end
+end
+
+
+-- TODO comment
+function load_backend(myMetrics, beName, myStats, statsFilter)
+  local myMetricsTable
+  if statsFilter ~= nil then
+    myMetricsTable = statsFilter
+  else
+    myMetricsTable = myStats
+  end
+
+  for haproxyMetricName,_ in pairs(myMetricsTable) do
+    local metricName = ''
+    if backendMetrics[haproxyMetricName] then
+      metricName = backendMetrics[haproxyMetricName]['metricName']
+    end
+    -- Store the backend metrics in the global table
+    if myMetrics[metricName] then
+      local value = myStats[haproxyMetricName]
+      if haproxyMetricName == 'status' then
+        value = parseStatusField(value)
+      end
+      -- those metrics are expressed in miliseconds while prometheus expects seconds
+      if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
+        value = value / 1000
+      end
+      local myValue = { name=beName, value=value }
+      if backendMetrics[haproxyMetricName]['labels'] then
+        myValue['labels'] = backendMetrics[haproxyMetricName]['labels']
+      end
+      table.insert(myMetrics[metricName]['values'], myValue)
+    end
+  end
+  -- server metrics
+  -- haproxy_server_bytes_in_total{backend="be",server="node_exporter"} 0
+  for k,s in pairs(core.backends[beName].servers) do
+    local serverName = k
+    local myStats = s.get_stats(s)
+    local myMetricsTable
+    if statsFilter ~= nil then
+      myMetricsTable = statsFilter
+    else
+      myMetricsTable = myStats
+    end
+
+    for haproxyMetricName,_ in pairs(myMetricsTable) do
+      local metricName = ''
+      if serverMetrics[haproxyMetricName] then
+        metricName = serverMetrics[haproxyMetricName]['metricName']
+      end
+      -- Store the server metrics in the global table
+      if myMetrics[metricName] then
+        local value = myStats[haproxyMetricName]
+        if haproxyMetricName == 'status' then
+          value = parseStatusField(value)
+        end
+        -- those metrics are expressed in miliseconds while prometheus expects seconds
+        if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
+          value = value / 1000
+        end
+        local myValue = { backend=beName, name=serverName, value=value }
+        if serverMetrics[haproxyMetricName]['labels'] then
+          myValue['labels'] = serverMetrics[haproxyMetricName]['labels']
+        end
+        table.insert(myMetrics[metricName]['values'], myValue)
+      end
+    end
+  end
+end
+
+-- function which returns an HTTP response
+--  <applet>: the HAProxy applet to use to send the response
+--  <status>: HTTP status code
+--  <body>: HTTP response body
+function return_content(applet, status, body)
+  -- send the response with the metrics
+  applet:set_status(status)
+  local len = string.len(body)
+  applet:add_header("Content-Length", len)
+  applet:add_header("Content-Type", "text/plain; version=0.0.4")
+  --- TODO: Add date header
+  applet:start_response()
+  applet:send(body)
+end
+
 -- this is the service that one should call in HAProxy to export the metrics
 -- into the prometheus format
 -- To add it, you need to load this file in HAProxy's global section:
@@ -172,7 +282,7 @@ end
 core.register_service("prometheus", "http", function(applet)
   local method = applet.method
   local path   = applet.path
-  local query  = applet.qs
+  local myMetrics = metrics
 
   if path ~= '/metrics' then
     applet:set_status(200)
@@ -187,131 +297,103 @@ core.register_service("prometheus", "http", function(applet)
   local buffer = core.concat()
 
   -- clean up old values first
-  for name, metric in pairs(metrics)
+  for name, metric in pairs(myMetrics)
   do
     metric['values'] = {}
   end
 
+  -- analyze the query string
+  --local filter = { enable = false;  backend = {}; frontend = {}; metric = {}; }
+  local filter = {}
+  local queryParameters = core.tokenize(applet.qs, "&")
+  for _, param in pairs(queryParameters) do
+    local tmp = core.tokenize(param, "=")
+    if #tmp == 2 and #tmp[2] > 0 and (tmp[1] == 'backend' or tmp[1] == 'frontend' or tmp[1] == 'metric') then
+      --FIXME: check the backend/frontend/metric exists here
+      if filter[tmp[1]] == nil then
+        filter[tmp[1]] = {}
+      end
+      filter[tmp[1]][tmp[2]] = true
+    end
+  end
 
   -- filling up the global table with the frontend metrics
   -- First parses HAProxy's internal structure
-  for j,f in pairs(core.frontends)
-  do
-    myStats = f.get_stats(f)
-    for haproxyMetricName, value in pairs(myStats)
-    do
-      local metricName = ''
-      if frontendMetrics[haproxyMetricName] then
-        metricName = frontendMetrics[haproxyMetricName]['metricName']
-      end
-      -- Store the metrics in the global table
-      if metrics[metricName] then
-        local myValue = { name=f.name, value=value }
-        if frontendMetrics[haproxyMetricName]['labels'] then
-          myValue['labels'] = frontendMetrics[haproxyMetricName]['labels']
-        end
-        table.insert(metrics[metricName]['values'], myValue)
-      end
+  local myFrontendTable = nil
+  if filter.frontend ~= nil then
+    myFrontendTable = filter.frontend
+  else
+    myFrontendTable = core.frontends
+  end
+  if myFrontendTable ~= nil then
+    for j,_ in pairs(myFrontendTable) do
+      local f = core.frontends[j]
+      if f == nil then goto continue end
+      local myStats = f.get_stats(f)
+      load_frontend(myMetrics, f.name, myStats, filter.metric)
+      ::continue::
     end
   end
 
 
   -- filling up the global table with the backend and server metrics
   -- First parses HAProxy's internal structure
-  for j,b in pairs(core.backends)
-  do
-    myStats = b.get_stats(b)
-    for haproxyMetricName, value in pairs(myStats)
-    do
-      local metricName = ''
-      if backendMetrics[haproxyMetricName] then
-        metricName = backendMetrics[haproxyMetricName]['metricName']
-      end
-      -- Store the backend metrics in the global table
-      if metrics[metricName] then
-        if haproxyMetricName == 'status' then
-          value = parseStatusField(value)
-        end
-        -- those metrics are expressed in miliseconds while prometheus expects seconds
-        if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
-          value = value / 1000
-        end
-        local myValue = { name=b.name, value=value }
-        if backendMetrics[haproxyMetricName]['labels'] then
-          myValue['labels'] = backendMetrics[haproxyMetricName]['labels']
-        end
-        table.insert(metrics[metricName]['values'], myValue)
-      end
-    end
-    -- server metrics
-    -- haproxy_server_bytes_in_total{backend="be",server="node_exporter"} 0
-    for k,s in pairs(b.servers)
-    do
-      local serverName = k
-      myStats = s.get_stats(s)
-      for haproxyMetricName, value in pairs(myStats)
-      do
-        local metricName = ''
-        if serverMetrics[haproxyMetricName] then
-          metricName = serverMetrics[haproxyMetricName]['metricName']
-        end
-        -- Store the server metrics in the global table
-        if metrics[metricName] then
-          if haproxyMetricName == 'status' then
-            value = parseStatusField(value)
-          end
-          -- those metrics are expressed in miliseconds while prometheus expects seconds
-          if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
-            value = value / 1000
-          end
-          local myValue = { backend=b.name, name=serverName, value=value }
-          if serverMetrics[haproxyMetricName]['labels'] then
-            myValue['labels'] = serverMetrics[haproxyMetricName]['labels']
-          end
-          table.insert(metrics[metricName]['values'], myValue)
-        end
-      end
+  local myBackendTable = nil
+  if filter.backend ~= nil then
+    myBackendTable = filter.backend
+  else
+    myBackendTable = core.backends
+  end
+  if myBackendTable ~= nil then
+    for j,_ in pairs(myBackendTable) do
+      local b = core.backends[j]
+      if b == nil then goto continue end
+      local myStats = b.get_stats(b)
+      load_backend(myMetrics, b.name, myStats, filter.metric)
+      ::continue::
     end
   end
 
   -- prepare the body of the response
-  for metricName, metric in pairs(metrics)
+  for metricName, metric in pairs(myMetrics)
   do
-    buffer:add(metric['help'])
-    buffer:add('\n')
-    buffer:add(metric['type'])
-    buffer:add('\n')
-    for id, line in pairs(metric['values'])
-    do
-      buffer:add(metricName)
-      if metric['objectType'] == 'server' then
-        buffer:add('{backend="')
-        buffer:add(line['backend'])
-        buffer:add('",')
-        buffer:add(metric['objectType'])
-        buffer:add('="')
-        buffer:add(line['name'])
-        buffer:add('"')
-      else
-        buffer:add('{')
-        buffer:add(metric['objectType'])
-        buffer:add('="')
-        buffer:add(line['name'])
-        buffer:add('"')
-      end
-      if line['labels'] then
-        for labelName, labelValue in pairs(line['labels'])
-        do
-          buffer:add(',')
-          buffer:add(labelName)
+    if #metric['values'] > 0 then
+      buffer:add(metric['help'])
+      buffer:add('\n')
+      buffer:add(metric['type'])
+      buffer:add('\n')
+      for id, line in pairs(metric['values'])
+      do
+        buffer:add(metricName)
+        if metric['objectType'] == 'server' then
+          buffer:add('{backend="')
+          buffer:add(line['backend'])
+          buffer:add('",')
+          buffer:add(metric['objectType'])
           buffer:add('="')
-          buffer:add(labelValue)
+          buffer:add(line['name'])
+          buffer:add('"')
+        else
+          buffer:add('{')
+          buffer:add(metric['objectType'])
+          buffer:add('="')
+          buffer:add(line['name'])
           buffer:add('"')
         end
+        if line['labels'] then
+          for labelName, labelValue in pairs(line['labels'])
+          do
+            buffer:add(',')
+            buffer:add(labelName)
+            buffer:add('="')
+            buffer:add(labelValue)
+            buffer:add('"')
+          end
+        end
+        buffer:add('} ')
+        buffer:add(line['value'])
+        buffer:add('\n')
       end
-      buffer:add('} ')
-      buffer:add(line['value'])
-      buffer:add('\n')
     end
   end
 

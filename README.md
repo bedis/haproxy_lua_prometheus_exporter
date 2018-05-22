@@ -21,3 +21,18 @@ frontend fe_prometheus
   [...]
   http-request use-service lua.prometheus
 ```
+# Filtering output
+This prometheus exporter can filter output. For this purpose, one can set query string parameters when calling the '/metrics' URL:
+ * `backend`: return metrics for this backend only (including its servers)
+ * `frontend`: return metrics for this frontend only
+ * `metric`: return this metric only
+
+The following rules applies:
+ * if only `backend` or `frontend` is specified, then all frontends or backends will be returned respectively. To get returned metrics for a single backend, simply add a frontend parameter with a dummy value (null is ignored)
+ * `backend` and `frontend` parameters can be passed multiple times. The exporter will then export metrics for all of them
+ * `metric` must point to an HAProxy metric name. The exporter provides this metric name as part of the metric's HELP
+
+Examples:
+ * Get metrics for the two backends *be1* and *be2* and all frontends: "/metrics?backend=be1&backend=be2"
+ * Get metrics for the two backends *be1* and *be2* only: "/metrics?backend=be1&backend=be2&frontend=NAN"
+ * Get current number of current active sessions on frontend *fe_main*: "/metrics?frontend=fe_main&metric=scur"
