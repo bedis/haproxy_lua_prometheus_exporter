@@ -10,6 +10,28 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 --]]
 
+
+-- functions dedicated to transform some HAProxy metric value into something
+-- prometheus can consume natively
+-- NOTE: those type of functions must be written BEFORE the global tables
+--       which describe the HAProxy metrics (frontendMetrics, ...)
+
+-- function which returns an integer related to the string which describes
+-- a frontend or backend or server status
+function parseStatusField(status)
+  if status:sub(1,2) == 'UP' or status == 'OPEN' or status == 'no check' then
+    return 1
+  end
+  return 0
+end
+
+-- function which turns ms to s, because prometheus expects seconds
+function ms2s(nb)
+  return nb / 1000
+end
+
+
+
 -- default page served when the request arrive in the Lua exporter
 -- for any URL but /metrics
 default_page = [[
@@ -59,7 +81,7 @@ backendMetrics = {
 	eresp = { type="gauge", metricName="haproxy_backend_response_errors_total", help="Total of response errors." };
 	wretr = { type="gauge", metricName="haproxy_backend_retry_warnings_total", help="Total of retry warnings." };
 	wredis = { type="gauge", metricName="haproxy_backend_redispatch_warnings_total", help="Total of redispatch warnings." };
-	status = { type="gauge", metricName="haproxy_backend_up", help="Current health status of the backend (1 = UP, 0 = DOWN)." };
+	status = { type="gauge", metricName="haproxy_backend_up", help="Current health status of the backend (1 = UP, 0 = DOWN).", transform=parseStatusField };
 	weight = { type="gauge", metricName="haproxy_backend_weight", help="Total weight of the servers in the backend." };
 	act = { type="gauge", metricName="haproxy_backend_current_server", help="Current number of active servers" };
 	rate = { type="gauge", metricName="haproxy_backend_current_session_rate", help="Current number of sessions per second over last elapsed second." };
@@ -70,10 +92,10 @@ backendMetrics = {
 	hrsp_4xx = { type="gauge", metricName="haproxy_backend_http_responses_total", help="Total of HTTP responses.", labels={ code='4xx' } };
 	hrsp_5xx = { type="gauge", metricName="haproxy_backend_http_responses_total", help="Total of HTTP responses.", labels={ code='5xx' } };
 	hrsp_other = { type="gauge", metricName="haproxy_backend_http_responses_total", help="Total of HTTP responses.", labels={ code='other' } };
-	queue = { type="gauge", metricName="haproxy_backend_http_queue_time_average_seconds", help="Avg. HTTP queue time for last 1024 successful connections." };
-	ctime = { type="gauge", metricName="haproxy_backend_http_connect_time_average_seconds", help="Avg. HTTP connect time for last 1024 successful connections." };
-	rtime = { type="gauge", metricName="haproxy_backend_http_response_time_average_seconds", help="Avg. HTTP response time for last 1024 successful connections." };
-	ttime = { type="gauge", metricName="haproxy_backend_http_total_time_average_seconds", help="Avg. HTTP total time for last 1024 successful connections." };
+	queue = { type="gauge", metricName="haproxy_backend_http_queue_time_average_seconds", help="Avg. HTTP queue time for last 1024 successful connections.", transform=ms2s };
+	ctime = { type="gauge", metricName="haproxy_backend_http_connect_time_average_seconds", help="Avg. HTTP connect time for last 1024 successful connections.", transform=ms2s };
+	rtime = { type="gauge", metricName="haproxy_backend_http_response_time_average_seconds", help="Avg. HTTP response time for last 1024 successful connections.", transform=ms2s };
+	ttime = { type="gauge", metricName="haproxy_backend_http_total_time_average_seconds", help="Avg. HTTP total time for last 1024 successful connections.", transform=ms2s };
 }
 
 -- table to link HAProxy's server statistics counter to its prometheus equivalent
@@ -90,7 +112,7 @@ serverMetrics = {
 	eresp = { type="gauge", metricName="haproxy_server_response_errors_total", help="Total of response errors." };
 	wretr = { type="gauge", metricName="haproxy_server_retry_warnings_total", help="Total of retry warnings." };
 	wredis = { type="gauge", metricName="haproxy_server_redispatch_warnings_total", help="Total of redispatch warnings." };
-	status = { type="gauge", metricName="haproxy_server_up", help="Current health status of the server (1 = UP, 0 = DOWN)." };
+	status = { type="gauge", metricName="haproxy_server_up", help="Current health status of the server (1 = UP, 0 = DOWN).", transform=parseStatusField };
 	weight = { type="gauge", metricName="haproxy_server_weight", help="Current weight of the server." };
 	chkfail = { type="gauge", metricName="haproxy_server_check_failures_total", help="Total number of failed health checks." };
 	downtime = { type="gauge", metricName="haproxy_server_downtime_seconds_total", help="Total downtime in seconds." };
@@ -103,10 +125,10 @@ serverMetrics = {
 	hrsp_4xx = { type="gauge", metricName="haproxy_server_http_responses_total", help="Total of HTTP responses.", labels={ code='4xx' } };
 	hrsp_5xx = { type="gauge", metricName="haproxy_server_http_responses_total", help="Total of HTTP responses.", labels={ code='5xx' } };
 	hrsp_other = { type="gauge", metricName="haproxy_server_http_responses_total", help="Total of HTTP responses.", labels={ code='other' } };
-	queue = { type="gauge", metricName="haproxy_server_http_queue_time_average_seconds", help="Avg. HTTP queue time for last 1024 successful connections." };
-	ctime = { type="gauge", metricName="haproxy_server_http_connect_time_average_seconds", help="Avg. HTTP connect time for last 1024 successful connections." };
-	rtime = { type="gauge", metricName="haproxy_server_http_response_time_average_seconds", help="Avg. HTTP response time for last 1024 successful connections." };
-	ttime = { type="gauge", metricName="haproxy_server_http_total_time_average_seconds", help="Avg. HTTP total time for last 1024 successful connections." };
+	queue = { type="gauge", metricName="haproxy_server_http_queue_time_average_seconds", help="Avg. HTTP queue time for last 1024 successful connections.", transform=ms2s  };
+	ctime = { type="gauge", metricName="haproxy_server_http_connect_time_average_seconds", help="Avg. HTTP connect time for last 1024 successful connections.", transform=ms2s  };
+	rtime = { type="gauge", metricName="haproxy_server_http_response_time_average_seconds", help="Avg. HTTP response time for last 1024 successful connections.", transform=ms2s  };
+	ttime = { type="gauge", metricName="haproxy_server_http_total_time_average_seconds", help="Avg. HTTP total time for last 1024 successful connections.", transform=ms2s  };
 }
 
 
@@ -145,15 +167,6 @@ function load_metrics()
   end
 end
 core.register_init(load_metrics)
-
--- function which returns an integer related to the string which describes
--- a frontend or backend or server status
-function parseStatusField(status)
-  if status:sub(1,2) == 'UP' or status == 'OPEN' or status == 'no check' then
-    return 1
-  end
-  return 0
-end
 
 
 -- TODO comment
@@ -200,13 +213,11 @@ function load_backend(myMetrics, beName, myStats, statsFilter)
     -- Store the backend metrics in the global table
     if myMetrics[metricName] then
       local value = myStats[haproxyMetricName]
-      if haproxyMetricName == 'status' then
-        value = parseStatusField(value)
+
+      if backendMetrics[haproxyMetricName].transform ~= nil then
+        value = backendMetrics[haproxyMetricName].transform(value)
       end
-      -- those metrics are expressed in miliseconds while prometheus expects seconds
-      if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
-        value = value / 1000
-      end
+
       local myValue = { name=beName, value=value }
       if backendMetrics[haproxyMetricName]['labels'] then
         myValue['labels'] = backendMetrics[haproxyMetricName]['labels']
@@ -234,13 +245,11 @@ function load_backend(myMetrics, beName, myStats, statsFilter)
       -- Store the server metrics in the global table
       if myMetrics[metricName] then
         local value = myStats[haproxyMetricName]
-        if haproxyMetricName == 'status' then
-          value = parseStatusField(value)
+
+        if serverMetrics[haproxyMetricName].transform ~= nil then
+          value = serverMetrics[haproxyMetricName].transform(value)
         end
-        -- those metrics are expressed in miliseconds while prometheus expects seconds
-        if haproxyMetricName == 'queue' or haproxyMetricName:sub(2,5) == 'time' then
-          value = value / 1000
-        end
+
         local myValue = { backend=beName, name=serverName, value=value }
         if serverMetrics[haproxyMetricName]['labels'] then
           myValue['labels'] = serverMetrics[haproxyMetricName]['labels']
